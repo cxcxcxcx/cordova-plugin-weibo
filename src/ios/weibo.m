@@ -21,8 +21,10 @@
 #include <sys/sysctl.h>
 
 #import <Cordova/CDV.h>
+#import <Cordova/CDVPlugin.h>
 #import <Cordova/CDVViewController.h>
-
+#import <objc/runtime.h>
+#import "AppDelegate.h"
 #import "WeiboSDK.h"
 
 #import "weibo.h"
@@ -35,6 +37,39 @@
 @property (nonatomic, strong) CDVInvokedUrlCommand *pendingCommand;
 
 @end
+
+// need to swap out a method, so swizzling it here
+static void swizzleMethod(Class class, SEL destinationSelector, SEL sourceSelector);
+
+@implementation AppDelegate (IdentityUrlHandling)
+
++ (void)load {
+    swizzleMethod([AppDelegate class],
+                  @selector(application:openURL:sourceApplication:annotation:),
+                  @selector(identity_application:openURL:sourceApplication:annotation:));
+}
+
+- (BOOL)identity_application: (UIApplication *)application
+                     openURL: (NSURL *)url
+           sourceApplication: (NSString *)sourceApplication
+                  annotation: (id)annotation {
+    weibo *weiboPlugin = [self.viewController.pluginObjects objectForKey:@"weibo"];
+    return [WeiboSDK handleOpenURL:url delegate:weiboPlugin];
+}
+@end
+
+#pragma mark Swizzling
+static void swizzleMethod(Class class, SEL destinationSelector, SEL sourceSelector) {
+    Method destinationMethod = class_getInstanceMethod(class, destinationSelector);
+    Method sourceMethod = class_getInstanceMethod(class, sourceSelector);
+    
+    // If the method doesn't exist, add it.  If it does exist, replace it with the given implementation.
+    if (class_addMethod(class, destinationSelector, method_getImplementation(sourceMethod), method_getTypeEncoding(sourceMethod))) {
+        class_replaceMethod(class, destinationSelector, method_getImplementation(destinationMethod), method_getTypeEncoding(destinationMethod));
+    } else {
+        method_exchangeImplementations(destinationMethod, sourceMethod);
+    }
+}
 
 @implementation weibo
 
